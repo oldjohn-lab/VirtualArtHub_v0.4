@@ -3,8 +3,8 @@
 ARG NODE_IMAGE=docker.m.daocloud.io/library/node:20-bookworm-slim
 FROM ${NODE_IMAGE} AS build
 WORKDIR /app
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+COPY frontend/package*.json ./
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 COPY frontend/ ./
 RUN npm run build
 

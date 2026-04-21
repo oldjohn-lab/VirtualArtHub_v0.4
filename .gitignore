@@ -13,5 +13,4 @@ virtual-art-hub/backend-koa/certs/*.pem
 **/node_modules/
 **/build/
 **/dist/
-**/package-lock.json
 
