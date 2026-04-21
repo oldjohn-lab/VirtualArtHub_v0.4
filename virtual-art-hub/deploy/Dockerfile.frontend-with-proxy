@@ -7,7 +7,7 @@ FROM ${NODE_IMAGE} AS build
 WORKDIR /app
 # 国内构建易连不上 registry.npmjs.org：默认 npmmirror；海外可传 NPM_CONFIG_REGISTRY=https://registry.npmjs.org
 ARG NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
-# react-scripts build 易在容器内 OOM：默认 8192MB 堆；关闭 source map、构建期跳过 ESLint；仍失败请增大 Docker Desktop 分配给引擎的内存，或提高 CRA_NODE_MEMORY_MB
+# react-scripts(CRACO) build 易在容器内 OOM：默认 8192MB 堆；关闭 source map、跳过构建期 ESLint；webpack 压缩见 frontend/craco.config.js（关闭并行以降低峰值）；仍失败请增大 Docker Desktop 内存或 CRA_NODE_MEMORY_MB
 ARG CRA_NODE_MEMORY_MB=8192
 RUN npm config set registry "${NPM_CONFIG_REGISTRY}" \
   && npm config set fetch-retries 5 \
