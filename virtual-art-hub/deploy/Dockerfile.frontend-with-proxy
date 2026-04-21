@@ -5,10 +5,12 @@ ARG NGINX_IMAGE=docker.m.daocloud.io/library/nginx:stable-bookworm
 
 FROM ${NODE_IMAGE} AS build
 WORKDIR /app
+# react-scripts build 易在容器内 OOM：提高 Node 堆、关闭 source map 以降低内存占用；仍失败时请增大 Docker 内存或调高 CRA_NODE_MEMORY_MB
+ARG CRA_NODE_MEMORY_MB=4096
 COPY frontend/package*.json ./
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 COPY frontend/ ./
-RUN npm run build
+RUN NODE_OPTIONS="--max-old-space-size=${CRA_NODE_MEMORY_MB}" GENERATE_SOURCEMAP=false npm run build
 
 FROM ${NGINX_IMAGE}
 COPY deploy/nginx-spa-proxy.conf /etc/nginx/conf.d/default.conf

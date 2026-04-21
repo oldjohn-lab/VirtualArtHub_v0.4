@@ -119,6 +119,9 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile.frontend-with-proxy
+      args:
+        # react-scripts build 内存不足时在 .env 中设置 CRA_NODE_MEMORY_MB=8192 后再构建
+        CRA_NODE_MEMORY_MB: ${CRA_NODE_MEMORY_MB:-4096}
     restart: unless-stopped
     ports:
       - "${VAH_WEB_PUBLISH_PORT:-8080}:80"
