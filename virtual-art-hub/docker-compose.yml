@@ -131,8 +131,8 @@ services:
       dockerfile: deploy/Dockerfile.frontend-with-proxy
       args:
         NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}
-        # react-scripts build 内存不足时在 .env 中设置 CRA_NODE_MEMORY_MB=8192 后再构建
-        CRA_NODE_MEMORY_MB: ${CRA_NODE_MEMORY_MB:-4096}
+        # react-scripts 在容器内易 OOM：默认 8192；仍失败可提高该值并增大 Docker 引擎可用内存
+        CRA_NODE_MEMORY_MB: ${CRA_NODE_MEMORY_MB:-8192}
     restart: unless-stopped
     ports:
       - "${VAH_WEB_PUBLISH_PORT:-8080}:80"

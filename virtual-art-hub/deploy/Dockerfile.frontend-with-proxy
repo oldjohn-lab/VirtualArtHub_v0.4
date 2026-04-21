@@ -7,8 +7,8 @@ FROM ${NODE_IMAGE} AS build
 WORKDIR /app
 # 国内构建易连不上 registry.npmjs.org：默认 npmmirror；海外可传 NPM_CONFIG_REGISTRY=https://registry.npmjs.org
 ARG NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
-# react-scripts build 易在容器内 OOM：提高 Node 堆、关闭 source map 以降低内存占用；仍失败时请增大 Docker 内存或调高 CRA_NODE_MEMORY_MB
-ARG CRA_NODE_MEMORY_MB=4096
+# react-scripts build 易在容器内 OOM：默认 8192MB 堆；关闭 source map、构建期跳过 ESLint；仍失败请增大 Docker Desktop 分配给引擎的内存，或提高 CRA_NODE_MEMORY_MB
+ARG CRA_NODE_MEMORY_MB=8192
 RUN npm config set registry "${NPM_CONFIG_REGISTRY}" \
   && npm config set fetch-retries 5 \
   && npm config set fetch-retry-mintimeout 15000 \
@@ -16,7 +16,10 @@ RUN npm config set registry "${NPM_CONFIG_REGISTRY}" \
 COPY frontend/package*.json ./
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 COPY frontend/ ./
-RUN NODE_OPTIONS="--max-old-space-size=${CRA_NODE_MEMORY_MB}" GENERATE_SOURCEMAP=false npm run build
+RUN NODE_OPTIONS="--max-old-space-size=${CRA_NODE_MEMORY_MB}" \
+  GENERATE_SOURCEMAP=false \
+  DISABLE_ESLINT_PLUGIN=true \
+  npm run build
 
 FROM ${NGINX_IMAGE}
 COPY deploy/nginx-spa-proxy.conf /etc/nginx/conf.d/default.conf
