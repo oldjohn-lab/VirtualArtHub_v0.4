@@ -5,8 +5,14 @@ ARG NGINX_IMAGE=docker.m.daocloud.io/library/nginx:stable-bookworm
 
 FROM ${NODE_IMAGE} AS build
 WORKDIR /app
+# 国内构建易连不上 registry.npmjs.org：默认 npmmirror；海外可传 NPM_CONFIG_REGISTRY=https://registry.npmjs.org
+ARG NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
 # react-scripts build 易在容器内 OOM：提高 Node 堆、关闭 source map 以降低内存占用；仍失败时请增大 Docker 内存或调高 CRA_NODE_MEMORY_MB
 ARG CRA_NODE_MEMORY_MB=4096
+RUN npm config set registry "${NPM_CONFIG_REGISTRY}" \
+  && npm config set fetch-retries 5 \
+  && npm config set fetch-retry-mintimeout 15000 \
+  && npm config set fetch-retry-maxtimeout 120000
 COPY frontend/package*.json ./
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 COPY frontend/ ./

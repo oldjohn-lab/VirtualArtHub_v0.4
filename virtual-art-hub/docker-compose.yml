@@ -28,6 +28,8 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile.backend
+      args:
+        NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}
     restart: unless-stopped
     environment:
       VAH_SERVICE: auth
@@ -46,6 +48,8 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile.backend
+      args:
+        NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}
     restart: unless-stopped
     environment:
       VAH_SERVICE: gallery
@@ -64,6 +68,8 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile.backend
+      args:
+        NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}
     restart: unless-stopped
     environment:
       VAH_SERVICE: market
@@ -82,6 +88,8 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile.backend
+      args:
+        NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}
     restart: unless-stopped
     environment:
       VAH_SERVICE: realtime
@@ -100,6 +108,8 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile.gateway
+      args:
+        NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}
     restart: unless-stopped
     ports:
       - "${VAH_GATEWAY_PUBLISH_PORT:-5002}:5002"
@@ -120,6 +130,7 @@ services:
       context: .
       dockerfile: deploy/Dockerfile.frontend-with-proxy
       args:
+        NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}
         # react-scripts build 内存不足时在 .env 中设置 CRA_NODE_MEMORY_MB=8192 后再构建
         CRA_NODE_MEMORY_MB: ${CRA_NODE_MEMORY_MB:-4096}
     restart: unless-stopped

@@ -42,6 +42,7 @@ jobs:
           tags: ghcr.io/${{ github.repository }}/vah-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: NPM_CONFIG_REGISTRY=https://registry.npmjs.org
 
       - name: Build gateway image
         uses: docker/build-push-action@v6
@@ -50,6 +51,7 @@ jobs:
           file: ./virtual-art-hub/deploy/Dockerfile.gateway
           push: ${{ github.event_name != 'pull_request' }}
           tags: ghcr.io/${{ github.repository }}/vah-gateway:latest
+          build-args: NPM_CONFIG_REGISTRY=https://registry.npmjs.org
 
       - name: Build frontend + nginx proxy image
         uses: docker/build-push-action@v6
@@ -58,3 +60,4 @@ jobs:
           file: ./virtual-art-hub/deploy/Dockerfile.frontend-with-proxy
           push: ${{ github.event_name != 'pull_request' }}
           tags: ghcr.io/${{ github.repository }}/vah-web:latest
+          build-args: NPM_CONFIG_REGISTRY=https://registry.npmjs.org
