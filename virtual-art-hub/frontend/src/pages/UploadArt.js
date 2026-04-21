@@ -474,6 +474,7 @@ const UploadArt = () => {
     if (artType === 'video') return 'video/*';
     if (artType === 'object') return 'image/*';
     if (artType === 'painting') return 'image/*';
+    if (artType === 'calligraphy') return 'image/*';
     if (artType === 'photography') return 'image/*';
     return '*';
   }, [artType]);
@@ -519,6 +520,7 @@ const UploadArt = () => {
             >
               <Option value="photography">{t('artwork_type_photography')}</Option>
               <Option value="painting">{t('artwork_type_painting')}</Option>
+              <Option value="calligraphy">{t('artwork_type_calligraphy')}</Option>
               <Option value="video">{t('artwork_type_video')}</Option>
               <Option value="literature">{t('artwork_type_literature')}</Option>
               <Option value="object">{t('artwork_type_object')}</Option>
@@ -559,9 +561,12 @@ const UploadArt = () => {
               <Form.Item
                 name="seriesTitle"
                 label={<Text strong>{t('series_title')}</Text>}
-                rules={[{ required: true, message: t('series_title_required') }]}
+                rules={[
+                  { required: true, message: t('series_title_required') },
+                  { max: 20, message: t('series_title_max') },
+                ]}
               >
-                <Input size="large" placeholder={t('series_title_placeholder')} />
+                <Input size="large" maxLength={20} showCount placeholder={t('series_title_placeholder')} />
               </Form.Item>
               <Row gutter={12}>
                 <Col span={12}>

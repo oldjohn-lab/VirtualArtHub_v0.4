@@ -1,6 +1,4 @@
-/* 展厅封面自定义字体（与 src/constants/galleryCoverFonts.js 中 value 为 Google Fonts 的项一致；系统字体由本机字库提供） */
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Lora:ital,wght@0,400;0,600;1,400&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@400;600;700&family=ZCOOL+XiaoWei&family=ZCOOL+QingKe+HuangYou&family=Ma+Shan+Zheng&family=Long+Cang&family=Merriweather:wght@400;700&family=Cormorant+Garamond:wght@400;600;700&family=Libre+Baskerville:wght@400;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;600;700&family=Spectral:wght@400;600;700&family=Fraunces:ital,wght@0,400;0,600;1,400&family=DM+Serif+Display&family=Inter:wght@400;600;700&family=Open+Sans:wght@400;600;700&family=Roboto:wght@400;500;700&family=Montserrat:wght@400;600;700&family=Source+Sans+3:wght@400;600;700&family=Nunito:wght@400;600;700&family=Raleway:wght@400;600;700&family=Poppins:wght@400;600;700&family=Work+Sans:wght@400;600&family=Oswald:wght@400;600&display=swap');
+/* 展厅封面自定义字体：Google Fonts 在 public/index.html 中 preconnect + 异步加载，避免 CSS @import 阻塞渲染（与 galleryCoverFonts.js 中 Google Fonts 项一致） */
 
 :root {
   --primary-color: #722ed1;

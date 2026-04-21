@@ -21,7 +21,7 @@ i18n
   .init({
     resources,
     fallbackLng: 'zh', // 默认语言
-    debug: true, // 开启调试模式
+    debug: process.env.NODE_ENV === 'development',
 
     interpolation: {
       escapeValue: false // react 已经对内容进行了转义，因此不需要 i18next 再次转义

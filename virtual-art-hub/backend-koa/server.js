@@ -5,6 +5,7 @@ const https = require('https');
 const Koa = require('koa');
 const Router = require('@koa/router');
 const cors = require('@koa/cors');
+const compress = require('koa-compress');
 const { koaBody } = require('koa-body');
 const jwt = require('jsonwebtoken');
 const path = require('path');
@@ -13,6 +14,15 @@ const sharp = require('sharp');
 const { Server } = require('socket.io');
 const db = require('./db');
 const { applyWatermark } = require('../backend/utils/watermark');
+const {
+  assertJwtConfigured,
+  getJwtSecret,
+  safeResolveBackendPath,
+  securityHeaders,
+  rateLimitLogin,
+  rateLimitRegister,
+  clampChatMessage,
+} = require('./security');
 
 const {
   User,
@@ -29,17 +39,47 @@ const {
 const Op = Sequelize.Op;
 
 const app = new Koa();
+if (String(process.env.TRUST_PROXY || '') === '1') {
+  app.proxy = true;
+}
 const router = new Router({ prefix: '/api' });
 
+const corsAllowList = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(/,/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+  : null;
+
+app.use(securityHeaders);
 app.use(
-  cors({
-    origin: '*',
-    allowHeaders: ['Content-Type', 'Authorization', 'x-auth-token', 'x-guest-id'],
+  cors(
+    corsAllowList && corsAllowList.length > 0
+      ? {
+          origin: (ctx) => {
+            const o = ctx.get('Origin');
+            if (!o) return '*';
+            return corsAllowList.includes(o) ? o : false;
+          },
+          allowHeaders: ['Content-Type', 'Authorization', 'x-auth-token', 'x-guest-id'],
+        }
+      : {
+          origin: '*',
+          allowHeaders: ['Content-Type', 'Authorization', 'x-auth-token', 'x-guest-id'],
+        }
+  )
+);
+app.use(
+  compress({
+    threshold: 2048,
+    br: false,
   })
 );
 app.use(
   koaBody({
     json: true,
+    jsonLimit: '1mb',
+    formLimit: '1mb',
+    textLimit: '1mb',
     multipart: true,
     formidable: {
       uploadDir: path.resolve(__dirname, '..', 'backend', 'uploads', '_tmp'),
@@ -60,7 +100,7 @@ function auth(ctx, next) {
     return;
   }
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'supersecretjwtkey');
+    const decoded = jwt.verify(token, getJwtSecret());
     ctx.state.user = decoded.user;
     return next();
   } catch {
@@ -178,6 +218,10 @@ function numFrom(input, fallback, min, max) {
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, n));
 }
+
+/** 展厅名称 / 文学连载对应展厅名称 上限（与前台一致） */
+const GALLERY_NAME_MAX_LEN = 20;
+const GALLERY_DESCRIPTION_MAX_LEN = 200;
 
 function randomPublicAccessCode() {
   return `${Math.random().toString(36).slice(2, 10)}${Math.random().toString(36).slice(2, 6)}`;
@@ -341,7 +385,7 @@ async function createGalleryPosterFromUpload(file, cropOptions = {}) {
 
 function signToken(userId) {
   const payload = { user: { id: userId } };
-  return jwt.sign(payload, process.env.JWT_SECRET || 'supersecretjwtkey', { expiresIn: '1h' });
+  return jwt.sign(payload, getJwtSecret(), { expiresIn: '1h' });
 }
 
 let ioRef = null;
@@ -602,11 +646,22 @@ router.get('/public/health', (ctx) => {
 }
 
 if (shouldMount('auth')) {
-router.post('/auth/register', async (ctx) => {
+router.post('/auth/register', rateLimitRegister, async (ctx) => {
   const { username, email, password } = ctx.request.body || {};
   if (!username || !email || !password) {
     ctx.status = 400;
     ctx.body = { msg: 'Missing required fields' };
+    return;
+  }
+  const pw = String(password);
+  if (pw.length < 8 || pw.length > 128) {
+    ctx.status = 400;
+    ctx.body = { msg: 'Password must be between 8 and 128 characters' };
+    return;
+  }
+  if (String(username).length > 64 || String(email).length > 254) {
+    ctx.status = 400;
+    ctx.body = { msg: 'Username or email too long' };
     return;
   }
   const existing = await User.findOne({ where: { email } });
@@ -619,7 +674,7 @@ router.post('/auth/register', async (ctx) => {
   ctx.body = { token: signToken(user.id) };
 });
 
-router.post('/auth/login', async (ctx) => {
+router.post('/auth/login', rateLimitLogin, async (ctx) => {
   const { email, password } = ctx.request.body || {};
   if (!email || !password) {
     ctx.status = 400;
@@ -714,8 +769,10 @@ router.put('/auth/avatar', auth, async (ctx) => {
     }
 
     if (user.avatarUploadPath) {
-      const oldAbs = path.resolve(__dirname, '..', 'backend', String(user.avatarUploadPath));
-      try { if (fs.existsSync(oldAbs)) fs.unlinkSync(oldAbs); } catch {}
+      const oldAbs = safeResolveBackendPath(user.avatarUploadPath, ['uploads/avatars']);
+      try {
+        if (oldAbs && fs.existsSync(oldAbs)) fs.unlinkSync(oldAbs);
+      } catch {}
     }
 
     user.avatarUploadPath = toUnixPath(path.join('uploads', 'avatars', filename));
@@ -756,8 +813,8 @@ router.get('/users/:id/avatar', async (ctx) => {
   }
 
   if (user.avatarUploadPath) {
-    const abs = path.resolve(__dirname, '..', 'backend', String(user.avatarUploadPath));
-    if (fs.existsSync(abs)) {
+    const abs = safeResolveBackendPath(user.avatarUploadPath, ['uploads/avatars']);
+    if (abs && fs.existsSync(abs)) {
       ctx.set('Cache-Control', 'public, max-age=3600');
       ctx.type = path.extname(abs) || 'image/png';
       ctx.body = fs.createReadStream(abs);
@@ -793,8 +850,8 @@ router.get('/galleries/:id/cover-image', async (ctx) => {
     ctx.body = { msg: 'Gallery cover image not found' };
     return;
   }
-  const abs = path.resolve(__dirname, '..', 'backend', p);
-  if (!fs.existsSync(abs)) {
+  const abs = safeResolveBackendPath(p, ['uploads/gallery-posters']);
+  if (!abs || !fs.existsSync(abs)) {
     ctx.status = 404;
     ctx.body = { msg: 'Gallery cover image not found' };
     return;
@@ -884,6 +941,16 @@ router.post('/galleries', auth, async (ctx) => {
   if (!name) {
     ctx.status = 400;
     ctx.body = { msg: 'Gallery name is required' };
+    return;
+  }
+  if (name.length > GALLERY_NAME_MAX_LEN) {
+    ctx.status = 400;
+    ctx.body = { msg: `Gallery name must be at most ${GALLERY_NAME_MAX_LEN} characters` };
+    return;
+  }
+  if (description.length > GALLERY_DESCRIPTION_MAX_LEN) {
+    ctx.status = 400;
+    ctx.body = { msg: `Gallery description must be at most ${GALLERY_DESCRIPTION_MAX_LEN} characters` };
     return;
   }
   let coverImage = body.coverImage ? String(body.coverImage) : null;
@@ -1210,9 +1277,22 @@ router.put('/galleries/:id', auth, async (ctx) => {
       ctx.body = { msg: 'Gallery name is required' };
       return;
     }
+    if (nextName.length > GALLERY_NAME_MAX_LEN) {
+      ctx.status = 400;
+      ctx.body = { msg: `Gallery name must be at most ${GALLERY_NAME_MAX_LEN} characters` };
+      return;
+    }
     gallery.name = nextName;
   }
-  if (body.description !== undefined) gallery.description = String(body.description || '');
+  if (body.description !== undefined) {
+    const nextDesc = String(body.description || '').trim();
+    if (nextDesc.length > GALLERY_DESCRIPTION_MAX_LEN) {
+      ctx.status = 400;
+      ctx.body = { msg: `Gallery description must be at most ${GALLERY_DESCRIPTION_MAX_LEN} characters` };
+      return;
+    }
+    gallery.description = nextDesc;
+  }
 
   const nextCoverMode = body.coverMode !== undefined ? (String(body.coverMode).toLowerCase() === 'custom' ? 'custom' : 'default') : gallery.coverMode || 'default';
   gallery.coverMode = nextCoverMode;
@@ -1250,8 +1330,10 @@ router.put('/galleries/:id', auth, async (ctx) => {
       offsetY: body.posterOffsetY,
     });
     if (gallery.coverImage && String(gallery.coverImage).startsWith('uploads/gallery-posters/')) {
-      const oldAbs = path.resolve(__dirname, '..', 'backend', String(gallery.coverImage));
-      try { if (fs.existsSync(oldAbs)) fs.unlinkSync(oldAbs); } catch {}
+      const oldAbs = safeResolveBackendPath(gallery.coverImage, ['uploads/gallery-posters']);
+      try {
+        if (oldAbs && fs.existsSync(oldAbs)) fs.unlinkSync(oldAbs);
+      } catch {}
     }
     gallery.coverImage = nextPoster;
   }
@@ -1268,8 +1350,10 @@ router.delete('/galleries/:id', auth, async (ctx) => {
     return;
   }
   if (gallery.coverImage && String(gallery.coverImage).startsWith('uploads/gallery-posters/')) {
-    const abs = path.resolve(__dirname, '..', 'backend', String(gallery.coverImage));
-    try { if (fs.existsSync(abs)) fs.unlinkSync(abs); } catch {}
+    const abs = safeResolveBackendPath(gallery.coverImage, ['uploads/gallery-posters']);
+    try {
+      if (abs && fs.existsSync(abs)) fs.unlinkSync(abs);
+    } catch {}
   }
   await gallery.destroy();
   ctx.body = { msg: 'Gallery removed' };
@@ -1328,6 +1412,11 @@ router.post('/artpieces', auth, async (ctx) => {
     if (!seriesName) {
       ctx.status = 400;
       ctx.body = { msg: 'Missing series title' };
+      return;
+    }
+    if (seriesName.length > GALLERY_NAME_MAX_LEN) {
+      ctx.status = 400;
+      ctx.body = { msg: `Series title must be at most ${GALLERY_NAME_MAX_LEN} characters` };
       return;
     }
     resolvedSeriesTitle = seriesName;
@@ -1392,18 +1481,18 @@ router.put('/artpieces/:id', auth, async (ctx) => {
     ensureDir(path.resolve(__dirname, '..', 'backend', 'uploads', 'watermarked'));
 
     if (artPiece.filePath) {
-      const oldAbs = path.resolve(__dirname, '..', 'backend', artPiece.filePath);
-      if (fs.existsSync(oldAbs)) fs.unlinkSync(oldAbs);
+      const oldAbs = safeResolveBackendPath(artPiece.filePath, ['uploads']);
+      if (oldAbs && fs.existsSync(oldAbs)) fs.unlinkSync(oldAbs);
     }
     if (Array.isArray(artPiece.extraFilePaths)) {
       artPiece.extraFilePaths.forEach((p) => {
-        const abs = path.resolve(__dirname, '..', 'backend', p);
-        if (fs.existsSync(abs)) fs.unlinkSync(abs);
+        const abs = safeResolveBackendPath(p, ['uploads']);
+        if (abs && fs.existsSync(abs)) fs.unlinkSync(abs);
       });
     }
     if (artPiece.watermarkedFilePath) {
-      const oldWmAbs = path.resolve(__dirname, '..', 'backend', artPiece.watermarkedFilePath);
-      if (fs.existsSync(oldWmAbs)) fs.unlinkSync(oldWmAbs);
+      const oldWmAbs = safeResolveBackendPath(artPiece.watermarkedFilePath, ['uploads']);
+      if (oldWmAbs && fs.existsSync(oldWmAbs)) fs.unlinkSync(oldWmAbs);
     }
 
     const prefix = nextType === 'video' ? 'video' : 'artPiece';
@@ -1423,6 +1512,11 @@ router.put('/artpieces/:id', auth, async (ctx) => {
   if (artPiece.artType === 'literature') {
     if (textContent !== undefined) artPiece.textContent = sanitizeRichText(String(textContent));
     const seriesName = String(seriesTitle || artPiece.seriesTitle || artPiece.title || '').trim();
+    if (seriesName.length > GALLERY_NAME_MAX_LEN) {
+      ctx.status = 400;
+      ctx.body = { msg: `Series title must be at most ${GALLERY_NAME_MAX_LEN} characters` };
+      return;
+    }
     if (seriesName) {
       artPiece.seriesTitle = seriesName;
       const existing = await Gallery.findOne({ where: { userId: ctx.state.user.id, name: seriesName } });
@@ -1435,18 +1529,23 @@ router.put('/artpieces/:id', auth, async (ctx) => {
     artPiece.filePath = null;
     artPiece.extraFilePaths = null;
     if (artPiece.watermarkedFilePath) {
-      const oldWmAbs = path.resolve(__dirname, '..', 'backend', artPiece.watermarkedFilePath);
-      if (fs.existsSync(oldWmAbs)) fs.unlinkSync(oldWmAbs);
+      const oldWmAbs = safeResolveBackendPath(artPiece.watermarkedFilePath, ['uploads']);
+      if (oldWmAbs && fs.existsSync(oldWmAbs)) fs.unlinkSync(oldWmAbs);
     }
     artPiece.watermarkedFilePath = null;
   } else if (artPiece.allowDownload === false && artPiece.artType !== 'video' && isImagePath(artPiece.filePath)) {
-    const inputAbs = path.resolve(__dirname, '..', 'backend', artPiece.filePath);
+    const inputAbs = safeResolveBackendPath(artPiece.filePath, ['uploads']);
     const outputDirAbs = path.resolve(__dirname, '..', 'backend', 'uploads', 'watermarked');
+    if (!inputAbs) {
+      ctx.status = 400;
+      ctx.body = { msg: 'Invalid file path' };
+      return;
+    }
     const outAbs = await applyWatermark(inputAbs, 'Virtual Art Hub', outputDirAbs);
     artPiece.watermarkedFilePath = toUnixPath(path.relative(path.resolve(__dirname, '..', 'backend'), outAbs));
   } else if (artPiece.allowDownload === true && artPiece.watermarkedFilePath) {
-    const oldWmAbs = path.resolve(__dirname, '..', 'backend', artPiece.watermarkedFilePath);
-    if (fs.existsSync(oldWmAbs)) fs.unlinkSync(oldWmAbs);
+    const oldWmAbs = safeResolveBackendPath(artPiece.watermarkedFilePath, ['uploads']);
+    if (oldWmAbs && fs.existsSync(oldWmAbs)) fs.unlinkSync(oldWmAbs);
     artPiece.watermarkedFilePath = null;
   }
 
@@ -1462,18 +1561,18 @@ router.delete('/artpieces/:id', auth, async (ctx) => {
     return;
   }
   if (artPiece.filePath) {
-    const fileAbs = path.resolve(__dirname, '..', 'backend', artPiece.filePath);
-    if (fs.existsSync(fileAbs)) fs.unlinkSync(fileAbs);
+    const fileAbs = safeResolveBackendPath(artPiece.filePath, ['uploads']);
+    if (fileAbs && fs.existsSync(fileAbs)) fs.unlinkSync(fileAbs);
   }
   if (Array.isArray(artPiece.extraFilePaths)) {
     artPiece.extraFilePaths.forEach((p) => {
-      const abs = path.resolve(__dirname, '..', 'backend', p);
-      if (fs.existsSync(abs)) fs.unlinkSync(abs);
+      const abs = safeResolveBackendPath(p, ['uploads']);
+      if (abs && fs.existsSync(abs)) fs.unlinkSync(abs);
     });
   }
   if (artPiece.watermarkedFilePath) {
-    const wmAbs = path.resolve(__dirname, '..', 'backend', artPiece.watermarkedFilePath);
-    if (fs.existsSync(wmAbs)) fs.unlinkSync(wmAbs);
+    const wmAbs = safeResolveBackendPath(artPiece.watermarkedFilePath, ['uploads']);
+    if (wmAbs && fs.existsSync(wmAbs)) fs.unlinkSync(wmAbs);
   }
   const marketRow = await MarketListing.findOne({ where: { artPieceId: artPiece.id } });
   if (marketRow) {
@@ -1502,7 +1601,12 @@ router.get('/artpieces/download/:id', async (ctx) => {
     ctx.body = { msg: 'Download is not allowed for this art piece' };
     return;
   }
-  const fileAbs = path.resolve(__dirname, '..', 'backend', artPiece.filePath);
+  const fileAbs = safeResolveBackendPath(artPiece.filePath, ['uploads']);
+  if (!fileAbs || !fs.existsSync(fileAbs)) {
+    ctx.status = 404;
+    ctx.body = { msg: 'File not found' };
+    return;
+  }
   ctx.attachment(path.basename(fileAbs));
   ctx.body = fs.createReadStream(fileAbs);
 });
@@ -1524,8 +1628,8 @@ router.get('/artpieces/preview/:id', async (ctx) => {
   }
 
   const watermarkEnabled = !(ctx.query.wm === '0' || ctx.query.watermark === '0');
-  const fullPath = path.resolve(path.join(__dirname, '..', 'backend', artPiece.filePath));
-  if (!fs.existsSync(fullPath)) {
+  const fullPath = safeResolveBackendPath(artPiece.filePath, ['uploads']);
+  if (!fullPath || !fs.existsSync(fullPath)) {
     ctx.status = 404;
     ctx.body = { msg: 'File not found' };
     return;
@@ -1571,7 +1675,14 @@ router.get('/interactions/comments/:artPieceId', async (ctx) => {
 });
 
 router.post('/interactions/comment/:artPieceId', auth, async (ctx) => {
-  const { content } = ctx.request.body || {};
+  const rawContent = ctx.request.body?.content;
+  const content = sanitizeRichText(rawContent != null ? String(rawContent) : '').slice(0, 4000);
+  const plain = content.replace(/<[^>]*>/g, '').replace(/\s+/g, '').trim();
+  if (!plain) {
+    ctx.status = 400;
+    ctx.body = { msg: 'Empty comment' };
+    return;
+  }
   const artPiece = await ArtPiece.findByPk(ctx.params.artPieceId);
   if (!artPiece) {
     ctx.status = 404;
@@ -1915,8 +2026,8 @@ router.delete('/admin/users/:id', adminAuth, async (ctx) => {
     if (Array.isArray(ap.extraFilePaths)) candidates.push(...ap.extraFilePaths);
     candidates.forEach((p) => {
       try {
-        const abs = path.resolve(__dirname, '..', 'backend', p);
-        if (fs.existsSync(abs)) fs.unlinkSync(abs);
+        const abs = safeResolveBackendPath(p, ['uploads']);
+        if (abs && fs.existsSync(abs)) fs.unlinkSync(abs);
       } catch {
         // ignore
       }
@@ -1935,6 +2046,7 @@ function marketArtTypeOrFromQuery(qRaw) {
   const map = [
     ['photography', ['photography', 'photo', 'photograph', '摄影', '摄像', '照片']],
     ['painting', ['painting', 'paint', '绘画', '油画', '水彩', '素描']],
+    ['calligraphy', ['calligraphy', '书法', '法书', '字', '毛筆', '毛笔', 'ink', 'ink art']],
     ['video', ['video', '影视', '视频', '电影', '录像', 'film', 'movie']],
     ['literature', ['literature', '文学', '小说', '诗', '散文', '书', 'book', 'poem']],
     ['object', ['object', '雕塑', '装置', '立体', '器物']],
@@ -1942,7 +2054,7 @@ function marketArtTypeOrFromQuery(qRaw) {
   const out = [];
   for (const [enumVal, keys] of map) {
     if (keys.some((k) => qLower.includes(String(k).toLowerCase()))) {
-      out.push({ '$artPiece.artType$': enumVal });
+      out.push({ '$artPiece.artType$': { [Op.eq]: enumVal } });
     }
   }
   return out;
@@ -1987,27 +2099,39 @@ router.get('/market/listings', async (ctx) => {
     listingWhere[Op.or] = ors;
   }
 
-  /** findAll + 单独 count：避免 findAndCountAll + subQuery/limit 在 MySQL 下偶发空结果 */
-  const fetchRows = () =>
-    MarketListing.findAll({
+  /**
+   * 无关键词：COUNT 不需 JOIN，避免 MySQL 下 include + distinct count 报错。
+   * 有关键词：用 findAndCountAll（distinct + col:id + subQuery:false）生成稳定 SQL。
+   */
+  const queryListings = async () => {
+    if (!q) {
+      const [count, rows] = await Promise.all([
+        MarketListing.count({ where: { status: 'active' } }),
+        MarketListing.findAll({
+          where: { status: 'active' },
+          include: listingInclude,
+          order: [['createdAt', 'DESC']],
+          limit: pageSize,
+          offset: (page - 1) * pageSize,
+        }),
+      ]);
+      return { count, rows };
+    }
+    const result = await MarketListing.findAndCountAll({
       where: listingWhere,
       include: listingInclude,
       order: [['createdAt', 'DESC']],
       limit: pageSize,
       offset: (page - 1) * pageSize,
-    });
-
-  const fetchCount = () =>
-    MarketListing.count({
-      where: listingWhere,
-      include: listingInclude,
       distinct: true,
-      col: 'MarketListing.id',
+      col: 'id',
+      subQuery: false,
     });
-
-  const queryListings = async () => {
-    const [count, rows] = await Promise.all([fetchCount(), fetchRows()]);
-    return { count, rows };
+    let count = result.count;
+    if (Array.isArray(count)) {
+      count = count.reduce((sum, row) => sum + Number(row?.count ?? 0), 0);
+    }
+    return { count, rows: result.rows };
   };
 
   try {
@@ -2351,13 +2475,33 @@ async function ensureGalleryColumns() {
   }
 }
 
+/** 旧库：为作品类型 ENUM 增加 calligraphy，与 ArtPiece 模型一致 */
+async function ensureArtPieceArtTypeEnum() {
+  try {
+    const [rows] = await db.sequelize.query("SHOW COLUMNS FROM `ArtPieces` WHERE Field = 'artType'");
+    const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+    if (!row) return;
+    const colType = String(row.Type || row.type || '');
+    if (colType.includes('calligraphy')) return;
+    await db.sequelize.query(
+      "ALTER TABLE `ArtPieces` MODIFY COLUMN `artType` ENUM('photography','painting','calligraphy','video','literature','object') NOT NULL DEFAULT 'photography'"
+    );
+  } catch (e) {
+    const msg = String(e && e.message ? e.message : e);
+    if (msg.includes("doesn't exist") || msg.includes("Unknown table")) return;
+    throw e;
+  }
+}
+
 async function start() {
+  assertJwtConfigured();
   ensureDir(path.resolve(__dirname, '..', 'backend', 'uploads', '_tmp'));
   ensureDir(path.resolve(__dirname, '..', 'backend', 'uploads', 'watermarked'));
   ensureDir(path.resolve(__dirname, '..', 'backend', 'uploads', 'avatars'));
   ensureDir(path.resolve(__dirname, '..', 'backend', 'uploads', 'gallery-posters'));
   await db.sequelize.authenticate();
   await ensureGalleryColumns();
+  await ensureArtPieceArtTypeEnum();
   await db.sequelize.sync();
 
   const useHttps = ['1', 'true', 'yes'].includes(String(process.env.USE_HTTPS || '').toLowerCase());
@@ -2376,7 +2520,14 @@ async function start() {
     server = http.createServer(app.callback());
   }
   if (shouldMount('realtime')) {
-  const io = new Server(server, { cors: { origin: '*' } });
+  const socketIoCorsOrigin =
+    corsAllowList && corsAllowList.length > 0 ? corsAllowList : '*';
+  const io = new Server(server, {
+    cors: {
+      origin: socketIoCorsOrigin,
+      methods: ['GET', 'POST'],
+    },
+  });
   ioRef = io;
 
   const cleanupOldMessages = async () => {
@@ -2435,13 +2586,17 @@ async function start() {
     socket.on('send_gallery_message', (data, ack) => {
       const galleryId = Number(data?.galleryId ?? socket.data?.galleryId);
       const room = socket.data?.room || (Number.isFinite(galleryId) ? `gallery_${galleryId}` : null);
-      if (!room) {
+      if (!room || !/^gallery_\d+$/.test(room)) {
         if (typeof ack === 'function') ack({ ok: false });
         return;
       }
       if (!socket.rooms.has(room)) socket.join(room);
       const clientId = data?.clientId ? String(data.clientId) : null;
-      const msgText = data?.message ? String(data.message) : '';
+      const msgText = clampChatMessage(data?.message ? String(data.message) : '');
+      if (!msgText.trim()) {
+        if (typeof ack === 'function') ack({ ok: false });
+        return;
+      }
       const senderId = socket.data?.userId || data?.senderId;
       const senderName = socket.data?.username || data?.sender || 'Anonymous';
       const msgTime = data?.time;
@@ -2471,7 +2626,10 @@ async function start() {
         });
     });
 
-    socket.on('join_chat', (room) => socket.join(room));
+    socket.on('join_chat', (room) => {
+      if (typeof room !== 'string' || !/^gallery_\d+$/.test(room)) return;
+      socket.join(room);
+    });
 
     socket.on('join_market_chat', async (payload, ack) => {
       const listingId = Number(payload?.listingId);
@@ -2521,7 +2679,7 @@ async function start() {
       if (!socket.rooms.has(room)) socket.join(room);
       const fromId = socket.data?.userId;
       const toId = peerId;
-      const msgText = data?.message ? String(data.message) : '';
+      const msgText = clampChatMessage(data?.message ? String(data.message) : '');
       if (!Number.isFinite(fromId) || !Number.isFinite(toId) || !msgText.trim()) {
         if (typeof ack === 'function') ack({ ok: false });
         return;
@@ -2564,7 +2722,18 @@ async function start() {
         });
     });
 
-    socket.on('send_message', (data) => ioRef.to(data.room).emit('receive_message', data));
+    socket.on('send_message', (data) => {
+      const room = data?.room;
+      if (typeof room !== 'string' || !/^gallery_\d+$/.test(room)) return;
+      if (!socket.rooms.has(room)) return;
+      const safe = {
+        ...data,
+        room,
+        message: clampChatMessage(data?.message != null ? String(data.message) : ''),
+      };
+      if (!safe.message.trim()) return;
+      ioRef.to(room).emit('receive_message', safe);
+    });
 
     socket.on('disconnect', () => {
       leaveTrackedRoom(socket);

@@ -15,7 +15,7 @@ const applyWatermark = async (imagePath, watermarkText, outputDir) => {
           x="50%" 
           y="50%" 
           font-family="Arial" 
-          font-size="${Math.min(width, height) / 10}" 
+          font-size="${Math.min(width, height) / 20}" 
           fill="rgba(255,255,255,0.5)" 
           text-anchor="middle" 
           dominant-baseline="middle" 

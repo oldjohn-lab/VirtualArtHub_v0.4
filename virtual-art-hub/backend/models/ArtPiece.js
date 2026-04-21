@@ -8,7 +8,7 @@ module.exports = (sequelize) => {
       primaryKey: true,
     },
     artType: {
-      type: DataTypes.ENUM('photography', 'painting', 'video', 'literature', 'object'),
+      type: DataTypes.ENUM('photography', 'painting', 'calligraphy', 'video', 'literature', 'object'),
       allowNull: false,
       defaultValue: 'photography',
     },

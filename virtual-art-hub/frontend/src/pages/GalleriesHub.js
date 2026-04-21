@@ -3,7 +3,7 @@ import { Button, Col, Empty, Input, Rate, Row, Space, Spin, Typography, Paginati
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { BookOpen, Brush, Camera, Clapperboard, Music2, Shapes } from 'lucide-react';
+import { BookOpen, Brush, Camera, Clapperboard, Music2, PenLine, Shapes } from 'lucide-react';
 import { DownOutlined, UpOutlined } from '@ant-design/icons';
 import { apiUrl } from '../apiBase';
 
@@ -22,6 +22,12 @@ const categoryDefs = [
     titleKey: 'category_painting',
     Icon: Brush,
     patterns: [/绘画/i, /画展/i, /painting/i, /oil/i, /watercolor/i, /素描/i],
+  },
+  {
+    key: 'calligraphy',
+    titleKey: 'category_calligraphy',
+    Icon: PenLine,
+    patterns: [/书法/i, /法书/i, /calligraphy/i],
   },
   {
     key: 'music',

@@ -1,30 +1,37 @@
-import React, { useContext, useMemo } from 'react';
+import React, { useContext, useMemo, Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { Layout, Menu, Button, Typography, Space, Select, Drawer, Avatar, Dropdown, Spin } from 'antd';
 import { MenuOutlined, UserOutlined, ShoppingCartOutlined, UploadOutlined, HomeOutlined, DashboardOutlined, MessageOutlined, LogoutOutlined, AppstoreOutlined, SettingOutlined } from '@ant-design/icons';
 import { AuthProvider, AuthContext } from './context/AuthContext';
 import { apiUrl } from './apiBase';
-import Home from './pages/Home';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import UploadArt from './pages/UploadArt';
-import MyGalleries from './pages/MyGalleries';
-import GalleryView from './pages/GalleryView';
-import AdminDashboard from './pages/AdminDashboard';
-import ArtMarket from './pages/ArtMarket';
-import ChatRoom from './pages/ChatRoom';
-import ArtPieceDetail from './pages/ArtPieceDetail';
-import PublicGalleryView from './pages/PublicGalleryView';
-import GalleriesHub from './pages/GalleriesHub';
-import Profile from './pages/Profile';
 import Logo from './components/Logo';
 import './App.css';
 import i18n from './i18n';
 import { useTranslation, I18nextProvider } from 'react-i18next';
 import { getStoredPublicVisitPath, setStoredPublicVisitPathFromCode, clearStoredPublicVisitPath } from './publicVisitSession';
 
+const Home = lazy(() => import('./pages/Home'));
+const Login = lazy(() => import('./pages/Login'));
+const Register = lazy(() => import('./pages/Register'));
+const UploadArt = lazy(() => import('./pages/UploadArt'));
+const MyGalleries = lazy(() => import('./pages/MyGalleries'));
+const GalleryView = lazy(() => import('./pages/GalleryView'));
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
+const ArtMarket = lazy(() => import('./pages/ArtMarket'));
+const ChatRoom = lazy(() => import('./pages/ChatRoom'));
+const ArtPieceDetail = lazy(() => import('./pages/ArtPieceDetail'));
+const PublicGalleryView = lazy(() => import('./pages/PublicGalleryView'));
+const GalleriesHub = lazy(() => import('./pages/GalleriesHub'));
+const Profile = lazy(() => import('./pages/Profile'));
+
 const { Header, Content, Footer } = Layout;
 const { Text } = Typography;
+
+const RouteFallback = () => (
+  <div className="app-route-loading">
+    <Spin size="large" />
+  </div>
+);
 
 const PrivateRoute = ({ children }) => {
   const { user, loading } = useContext(AuthContext);
@@ -326,22 +333,24 @@ function AppShell() {
         <div className="app-scroll-region">
           <Content className="app-content">
             <div className="site-layout-content">
-              <Routes>
-                <Route path="/" element={<Home />} />
-                <Route path="/login" element={<Login />} />
-                <Route path="/register" element={<Register />} />
-                <Route path="/market" element={<ArtMarket />} />
-                <Route path="/chat" element={<ChatRoom />} />
-                <Route path="/artpiece/:id" element={<ArtPieceDetail />} />
-                <Route path="/gallery/:id" element={<PublicGalleryView />} />
-                <Route path="/visit/:code" element={<PublicGalleryView />} />
-                <Route path="/galleries" element={<PrivateRoute><GalleriesHub /></PrivateRoute>} />
-                <Route path="/my-gallery" element={<PrivateRoute><MyGalleries /></PrivateRoute>} />
-                <Route path="/my-gallery/:id" element={<PrivateRoute><GalleryView /></PrivateRoute>} />
-                <Route path="/upload" element={<PrivateRoute><UploadArt /></PrivateRoute>} />
-                <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
-                <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
-              </Routes>
+              <Suspense fallback={<RouteFallback />}>
+                <Routes>
+                  <Route path="/" element={<Home />} />
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/register" element={<Register />} />
+                  <Route path="/market" element={<ArtMarket />} />
+                  <Route path="/chat" element={<ChatRoom />} />
+                  <Route path="/artpiece/:id" element={<ArtPieceDetail />} />
+                  <Route path="/gallery/:id" element={<PublicGalleryView />} />
+                  <Route path="/visit/:code" element={<PublicGalleryView />} />
+                  <Route path="/galleries" element={<PrivateRoute><GalleriesHub /></PrivateRoute>} />
+                  <Route path="/my-gallery" element={<PrivateRoute><MyGalleries /></PrivateRoute>} />
+                  <Route path="/my-gallery/:id" element={<PrivateRoute><GalleryView /></PrivateRoute>} />
+                  <Route path="/upload" element={<PrivateRoute><UploadArt /></PrivateRoute>} />
+                  <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
+                  <Route path="/admin" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+                </Routes>
+              </Suspense>
             </div>
           </Content>
           <Footer className="app-footer">

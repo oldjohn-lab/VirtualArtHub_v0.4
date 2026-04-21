@@ -553,10 +553,15 @@ const MyGalleries = () => {
               <Form.Item
                 name="name"
                 label={<Text strong>{t('gallery_name')}</Text>}
-                rules={[{ required: true, message: t('gallery_name_required') }]}
+                rules={[
+                  { required: true, message: t('gallery_name_required') },
+                  { max: 20, message: t('gallery_name_max') },
+                ]}
               >
                 <Input
                   size="large"
+                  maxLength={20}
+                  showCount
                   placeholder={t('gallery_name_placeholder')}
                   style={
                     posterMode === 'custom'
@@ -602,9 +607,12 @@ const MyGalleries = () => {
               <Form.Item
                 name="description"
                 label={<Text strong>{t('gallery_description')}</Text>}
+                rules={[{ max: 200, message: t('gallery_description_max') }]}
               >
                 <Input.TextArea
                   rows={4}
+                  maxLength={200}
+                  showCount
                   placeholder={t('gallery_description_placeholder')}
                   style={
                     posterMode === 'custom'

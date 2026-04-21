@@ -105,7 +105,8 @@ const ArtMarket = () => {
       setTotal(tot);
     } catch (err) {
       console.error(err);
-      message.error(t('market_listings_load_fail'));
+      const backendMsg = err.response?.data?.msg;
+      message.error(backendMsg || t('market_listings_load_fail'));
       setListings([]);
       setTotal(0);
     } finally {
