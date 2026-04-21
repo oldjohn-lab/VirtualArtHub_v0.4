@@ -1,0 +1,6 @@
+本地「整站 HTTPS」推荐步骤
+生成证书（在 backend-koa/certs 下，见 .env.example 中的 openssl 命令）。
+backend-koa/.env：USE_HTTPS=1，按需设置 SSL_KEY_PATH / SSL_CERT_PATH。
+frontend/.env.development.local（从 .env.example 拷贝）：HTTPS=true、REACT_APP_PROXY_TARGET=https://127.0.0.1:5002。
+分别启动后端与 npm start；浏览器信任自签证书或使用 mkcert。
+线上环境：一般在 Nginx / Caddy / 云负载均衡 终结 TLS，Koa 仍可只监听 HTTP；前端构建时设置 REACT_APP_API_BASE_URL=https://你的域名/api 即可。若你希望默认代理也改成 https（强制所有人本地都开 HTTPS），可以说一下再改默认项。

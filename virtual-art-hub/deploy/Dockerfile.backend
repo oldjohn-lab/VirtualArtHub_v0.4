@@ -1,0 +1,15 @@
+# Virtual Arts Hub Koa 微服务镜像（同一 Dockerfile，运行时通过 VAH_SERVICE / PORT 区分）
+FROM node:20-alpine
+WORKDIR /app/backend-koa
+
+COPY backend-koa/package.json backend-koa/package-lock.json ./
+RUN npm ci --omit=dev
+
+COPY backend-koa/ ./
+COPY backend ../backend
+
+ENV NODE_ENV=production
+
+EXPOSE 5002 5101 5102 5103 5104
+
+CMD ["node", "index.js"]

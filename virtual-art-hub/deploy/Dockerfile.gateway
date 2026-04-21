@@ -1,0 +1,12 @@
+FROM node:20-alpine
+WORKDIR /app
+
+COPY services/vah-gateway/package.json services/vah-gateway/package-lock.json ./
+RUN npm ci --omit=dev
+
+COPY services/vah-gateway/index.js ./index.js
+
+ENV NODE_ENV=production
+EXPOSE 5002
+
+CMD ["node", "index.js"]

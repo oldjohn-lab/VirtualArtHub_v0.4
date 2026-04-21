@@ -1,0 +1,17 @@
+# 历史/空子仓目录，避免嵌套 .git 导致无法 add
+VirtualArtsHub_v0.3/
+
+**/.env
+**/.env.*
+!**/.env.example
+
+virtual-art-hub/backend/uploads/
+virtual-art-hub/backend-koa/.env
+virtual-art-hub/backend-koa/mysql-admin.env
+virtual-art-hub/backend-koa/certs/*.pem
+
+**/node_modules/
+**/build/
+**/dist/
+**/package-lock.json
+

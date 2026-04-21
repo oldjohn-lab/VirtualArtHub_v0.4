@@ -1,0 +1,129 @@
+# Virtual Arts Hub — 本地与云端一致的容器拓扑（网关 + 领域微服务 + 前端 + MySQL）
+# 用法：复制 deploy/env.docker.example 为 .env.docker 后执行 docker compose --env-file .env.docker up -d --build
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-vah_root_dev}
+      MYSQL_DATABASE: ${DB_NAME:-virtual_art_hub_cursor}
+      MYSQL_USER: ${DB_USER:-vah_app}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-vah_app_pass}
+    ports:
+      - "${MYSQL_PUBLISH_PORT:-3306}:3306"
+    volumes:
+      - vah_mysql_data:/var/lib/mysql
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'mysqladmin ping -h localhost -uroot -p"$MYSQL_ROOT_PASSWORD" || exit 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  vah-auth:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.backend
+    restart: unless-stopped
+    environment:
+      VAH_SERVICE: auth
+      PORT: 5101
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-virtual_art_hub_cursor}
+      DB_USER: ${DB_USER:-vah_app}
+      DB_PASSWORD: ${DB_PASSWORD:-vah_app_pass}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  vah-gallery:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.backend
+    restart: unless-stopped
+    environment:
+      VAH_SERVICE: gallery
+      PORT: 5102
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-virtual_art_hub_cursor}
+      DB_USER: ${DB_USER:-vah_app}
+      DB_PASSWORD: ${DB_PASSWORD:-vah_app_pass}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  vah-market:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.backend
+    restart: unless-stopped
+    environment:
+      VAH_SERVICE: market
+      PORT: 5103
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-virtual_art_hub_cursor}
+      DB_USER: ${DB_USER:-vah_app}
+      DB_PASSWORD: ${DB_PASSWORD:-vah_app_pass}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  vah-realtime:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.backend
+    restart: unless-stopped
+    environment:
+      VAH_SERVICE: realtime
+      PORT: 5104
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-virtual_art_hub_cursor}
+      DB_USER: ${DB_USER:-vah_app}
+      DB_PASSWORD: ${DB_PASSWORD:-vah_app_pass}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  vah-gateway:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.gateway
+    restart: unless-stopped
+    ports:
+      - "${VAH_GATEWAY_PUBLISH_PORT:-5002}:5002"
+    environment:
+      PORT: 5002
+      VAH_AUTH_ORIGIN: http://vah-auth:5101
+      VAH_GALLERY_ORIGIN: http://vah-gallery:5102
+      VAH_MARKET_ORIGIN: http://vah-market:5103
+      VAH_REALTIME_ORIGIN: http://vah-realtime:5104
+    depends_on:
+      - vah-auth
+      - vah-gallery
+      - vah-market
+      - vah-realtime
+
+  vah-web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.frontend-with-proxy
+    restart: unless-stopped
+    ports:
+      - "${VAH_WEB_PUBLISH_PORT:-8080}:80"
+    depends_on:
+      - vah-gateway
+
+volumes:
+  vah_mysql_data:

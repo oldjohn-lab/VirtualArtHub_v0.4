@@ -1,0 +1,20 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shared Sequelize models, uploads, and utility scripts (API runs in backend-koa).",
+  "scripts": {
+    "promote-admin": "node promoteAdmin.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^17.4.1",
+    "mysql2": "^3.22.0",
+    "sequelize": "^6.37.8",
+    "sharp": "^0.34.5"
+  }
+}

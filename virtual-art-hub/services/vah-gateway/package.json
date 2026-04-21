@@ -1,0 +1,13 @@
+{
+  "name": "vah-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Virtual Arts Hub edge gateway：按路径转发至各微服务实例",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "http-proxy": "^1.18.1"
+  }
+}

@@ -1,0 +1,12 @@
+# React 静态资源 + Nginx，将 /api、/socket.io 转发至网关（单入口便于云上 Ingress）
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+FROM nginx:1.27-alpine
+COPY deploy/nginx-spa-proxy.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/build /usr/share/nginx/html
+EXPOSE 80
