@@ -1,4 +1,6 @@
-FROM node:20-alpine
+# 默认经 DaoCloud 拉取 Docker Hub library 镜像，便于国内网络；可用 --build-arg NODE_IMAGE 覆盖。
+ARG NODE_IMAGE=docker.m.daocloud.io/library/node:20-bookworm-slim
+FROM ${NODE_IMAGE}
 WORKDIR /app
 
 COPY services/vah-gateway/package.json services/vah-gateway/package-lock.json ./

@@ -1,5 +1,8 @@
 # Virtual Arts Hub Koa 微服务镜像（同一 Dockerfile，运行时通过 VAH_SERVICE / PORT 区分）
-FROM node:20-alpine
+# 默认使用 DaoCloud 代理的 Debian slim 官方 Node 镜像（避免直连 docker.io / 避免 alpine）。
+# 自定义：docker build --build-arg NODE_IMAGE=你的镜像节点/library/node:20-bookworm-slim ...
+ARG NODE_IMAGE=docker.m.daocloud.io/library/node:20-bookworm-slim
+FROM ${NODE_IMAGE}
 WORKDIR /app/backend-koa
 
 COPY backend-koa/package.json backend-koa/package-lock.json ./
