@@ -1,0 +1,123 @@
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "${MYSQL_PUBLISH_PORT:-3306}:3306"
+    volumes:
+      - vah_mysql_data:/var/lib/mysql
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'mysqladmin ping -h localhost -uroot -p"$MYSQL_ROOT_PASSWORD" || exit 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  vah-auth:
+    image: ${IMAGE_REPO}/vah-backend:${IMAGE_TAG}
+    restart: unless-stopped
+    environment:
+      VAH_SERVICE: auth
+      PORT: 5101
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      NODE_ENV: production
+      TRUST_PROXY: "1"
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  vah-gallery:
+    image: ${IMAGE_REPO}/vah-backend:${IMAGE_TAG}
+    restart: unless-stopped
+    environment:
+      VAH_SERVICE: gallery
+      PORT: 5102
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      NODE_ENV: production
+      TRUST_PROXY: "1"
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  vah-market:
+    image: ${IMAGE_REPO}/vah-backend:${IMAGE_TAG}
+    restart: unless-stopped
+    environment:
+      VAH_SERVICE: market
+      PORT: 5103
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      NODE_ENV: production
+      TRUST_PROXY: "1"
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  vah-realtime:
+    image: ${IMAGE_REPO}/vah-backend:${IMAGE_TAG}
+    restart: unless-stopped
+    environment:
+      VAH_SERVICE: realtime
+      PORT: 5104
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      NODE_ENV: production
+      TRUST_PROXY: "1"
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  vah-gateway:
+    image: ${IMAGE_REPO}/vah-gateway:${IMAGE_TAG}
+    restart: unless-stopped
+    ports:
+      - "${VAH_GATEWAY_PUBLISH_PORT:-5002}:5002"
+    environment:
+      PORT: 5002
+      VAH_AUTH_ORIGIN: http://vah-auth:5101
+      VAH_GALLERY_ORIGIN: http://vah-gallery:5102
+      VAH_MARKET_ORIGIN: http://vah-market:5103
+      VAH_REALTIME_ORIGIN: http://vah-realtime:5104
+      NODE_ENV: production
+    depends_on:
+      - vah-auth
+      - vah-gallery
+      - vah-market
+      - vah-realtime
+
+  vah-web:
+    image: ${IMAGE_REPO}/vah-web:${IMAGE_TAG}
+    restart: unless-stopped
+    ports:
+      - "${VAH_WEB_PUBLISH_PORT:-8080}:80"
+    depends_on:
+      - vah-gateway
+
+volumes:
+  vah_mysql_data:

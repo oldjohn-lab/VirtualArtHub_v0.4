@@ -104,16 +104,63 @@ npm start
 
 ## 六、容器化与 Compose
 
-- **Compose 文件**：仓库根目录 `virtual-art-hub/docker-compose.yml`
-- **环境变量示例**：`deploy/env.docker.example` → 复制为 `.env.docker` 后：
-
-```bash
-docker compose --env-file .env.docker up -d --build
-```
-
-- **对外端口**：默认 Web `8080`（`vah-web`）、网关可直接映射 `VAH_GATEWAY_PUBLISH_PORT`（默认 `5002`）。
+- **本地开发构建文件**：`virtual-art-hub/docker-compose.yml`（含 `build:`，适合本机调试）
+- **生产部署文件**：`virtual-art-hub/docker-compose.prod.yml`（仅 `image:`，适合 2G ECS）
+- **环境变量示例**
+  - 开发：`deploy/env.docker.example` → `.env.docker`
+  - 生产：`deploy/env.prod.example` → `.env.prod`
 
 镜像构建文件位于 `deploy/Dockerfile.backend`、`deploy/Dockerfile.gateway`、`deploy/Dockerfile.frontend-with-proxy`。
+
+### 6.1 本地构建并推送镜像（推荐）
+
+在本地（或任意高内存构建机）执行：
+
+```bash
+cd virtual-art-hub
+
+# 1) 登录镜像仓库（示例：GHCR）
+echo <YOUR_GITHUB_TOKEN> | docker login ghcr.io -u <YOUR_GITHUB_USER> --password-stdin
+
+# 2) 设置镜像前缀与版本
+export IMAGE_REPO=ghcr.io/oldjohn-lab/virtualarthub_v0.4
+export IMAGE_TAG=v0.4.0
+
+# 3) 构建并推送（后端一份镜像复用到 auth/gallery/market/realtime）
+docker build -f deploy/Dockerfile.backend -t $IMAGE_REPO/vah-backend:$IMAGE_TAG .
+docker push $IMAGE_REPO/vah-backend:$IMAGE_TAG
+
+docker build -f deploy/Dockerfile.gateway -t $IMAGE_REPO/vah-gateway:$IMAGE_TAG .
+docker push $IMAGE_REPO/vah-gateway:$IMAGE_TAG
+
+docker build -f deploy/Dockerfile.frontend-with-proxy -t $IMAGE_REPO/vah-web:$IMAGE_TAG .
+docker push $IMAGE_REPO/vah-web:$IMAGE_TAG
+```
+
+### 6.2 远端（ECS）仅拉取并部署镜像
+
+在 ECS 上执行（不再 `build`，只 `pull + up`）：
+
+```bash
+cd virtual-art-hub
+cp deploy/env.prod.example .env.prod
+# 编辑 .env.prod，至少改密码/JWT，并设置 IMAGE_REPO 与 IMAGE_TAG
+
+docker compose --env-file .env.prod -f docker-compose.prod.yml pull
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+```
+
+### 6.3 常用升级命令
+
+```bash
+# 更新到新 tag
+docker compose --env-file .env.prod -f docker-compose.prod.yml pull
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+
+# 查看状态与日志
+docker compose --env-file .env.prod -f docker-compose.prod.yml ps
+docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f vah-web vah-gateway
+```
 
 ---
 
