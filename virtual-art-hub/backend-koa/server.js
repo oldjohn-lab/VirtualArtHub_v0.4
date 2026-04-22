@@ -213,6 +213,10 @@ function boolFrom(input, fallback = true) {
   return fallback;
 }
 
+function normalizeEmail(input) {
+  return String(input ?? '').trim().toLowerCase();
+}
+
 function numFrom(input, fallback, min, max) {
   const n = Number(input);
   if (!Number.isFinite(n)) return fallback;
@@ -647,7 +651,10 @@ router.get('/public/health', (ctx) => {
 
 if (shouldMount('auth')) {
 router.post('/auth/register', rateLimitRegister, async (ctx) => {
-  const { username, email, password } = ctx.request.body || {};
+  const body = ctx.request.body || {};
+  const username = String(body.username || '').trim();
+  const email = normalizeEmail(body.email);
+  const password = body.password;
   if (!username || !email || !password) {
     ctx.status = 400;
     ctx.body = { msg: 'Missing required fields' };
@@ -659,7 +666,7 @@ router.post('/auth/register', rateLimitRegister, async (ctx) => {
     ctx.body = { msg: 'Password must be between 8 and 128 characters' };
     return;
   }
-  if (String(username).length > 64 || String(email).length > 254) {
+  if (String(username).length > 64 || email.length > 254) {
     ctx.status = 400;
     ctx.body = { msg: 'Username or email too long' };
     return;
@@ -670,12 +677,13 @@ router.post('/auth/register', rateLimitRegister, async (ctx) => {
     ctx.body = { msg: 'User already exists' };
     return;
   }
-  const user = await User.create({ username, email, password });
+  const user = await User.create({ username, email, password: pw });
   ctx.body = { token: signToken(user.id) };
 });
 
 router.post('/auth/login', rateLimitLogin, async (ctx) => {
-  const { email, password } = ctx.request.body || {};
+  const email = normalizeEmail(ctx.request.body?.email);
+  const password = ctx.request.body?.password;
   if (!email || !password) {
     ctx.status = 400;
     ctx.body = { msg: 'Missing email or password' };
@@ -2463,7 +2471,15 @@ async function ensureGalleryColumns() {
     allowPublicAccess: "ALTER TABLE `Galleries` ADD COLUMN `allowPublicAccess` TINYINT(1) NOT NULL DEFAULT 0",
     publicAccessCode: "ALTER TABLE `Galleries` ADD COLUMN `publicAccessCode` VARCHAR(64) NULL",
   };
-  const current = await q.describeTable(table);
+  let current;
+  try {
+    current = await q.describeTable(table);
+  } catch (e) {
+    const msg = String(e && e.message ? e.message : e);
+    // Fresh database: table will be created by sequelize.sync() later.
+    if (msg.includes('No description found') || msg.includes("doesn't exist") || msg.includes('Unknown table')) return;
+    throw e;
+  }
   for (const [name, sql] of Object.entries(defs)) {
     if (!current[name]) {
       await db.sequelize.query(sql);
@@ -2502,7 +2518,19 @@ async function start() {
   await db.sequelize.authenticate();
   await ensureGalleryColumns();
   await ensureArtPieceArtTypeEnum();
-  await db.sequelize.sync();
+  try {
+    await db.sequelize.sync();
+  } catch (e) {
+    const code = e?.original?.code || e?.parent?.code || e?.code;
+    const msg = String(e?.message || e);
+    // Multiple services may race on startup against the same DB schema.
+    // If one instance already created an index, another may hit ER_DUP_KEYNAME.
+    if (code === 'ER_DUP_KEYNAME' || msg.includes('Duplicate key name')) {
+      console.warn('[sync] duplicate index detected during concurrent startup, continuing...');
+    } else {
+      throw e;
+    }
+  }
 
   const useHttps = ['1', 'true', 'yes'].includes(String(process.env.USE_HTTPS || '').toLowerCase());
   let server;
