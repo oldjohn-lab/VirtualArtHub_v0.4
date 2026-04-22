@@ -23,6 +23,8 @@ services:
 
   vah-auth:
     image: ${IMAGE_REPO}/vah-backend:${IMAGE_TAG}
+    volumes:
+      - ${VAH_UPLOADS_BIND:-vah_uploads}:/app/backend/uploads
     restart: unless-stopped
     environment:
       VAH_SERVICE: auth
@@ -41,6 +43,8 @@ services:
 
   vah-gallery:
     image: ${IMAGE_REPO}/vah-backend:${IMAGE_TAG}
+    volumes:
+      - ${VAH_UPLOADS_BIND:-vah_uploads}:/app/backend/uploads
     restart: unless-stopped
     environment:
       VAH_SERVICE: gallery
@@ -59,6 +63,8 @@ services:
 
   vah-market:
     image: ${IMAGE_REPO}/vah-backend:${IMAGE_TAG}
+    volumes:
+      - ${VAH_UPLOADS_BIND:-vah_uploads}:/app/backend/uploads
     restart: unless-stopped
     environment:
       VAH_SERVICE: market
@@ -121,3 +127,4 @@ services:
 
 volumes:
   vah_mysql_data:
+  vah_uploads:

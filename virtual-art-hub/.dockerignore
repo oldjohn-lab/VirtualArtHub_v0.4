@@ -1,3 +1,6 @@
+# 用户上传不入镜像；运行时挂载到 /app/backend/uploads（见 compose 卷）
+backend/uploads
+
 node_modules
 **/node_modules
 **/build

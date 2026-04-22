@@ -14,6 +14,11 @@ RUN npm config set registry "${NPM_CONFIG_REGISTRY}" \
 COPY backend-koa/package*.json ./
 RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
 
+WORKDIR /app/backend
+COPY backend/package*.json ./
+RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
+
+WORKDIR /app/backend-koa
 COPY backend-koa/ ./
 COPY backend ../backend
 

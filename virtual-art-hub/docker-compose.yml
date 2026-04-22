@@ -30,6 +30,9 @@ services:
       dockerfile: deploy/Dockerfile.backend
       args:
         NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}
+    volumes:
+      # 默认命名卷 vah_uploads（镜像重建/compose up --build 不丢图）；可设 VAH_UPLOADS_BIND=/宿主机绝对路径 改为绑定目录便于备份
+      - ${VAH_UPLOADS_BIND:-vah_uploads}:/app/backend/uploads
     restart: unless-stopped
     environment:
       VAH_SERVICE: auth
@@ -50,6 +53,8 @@ services:
       dockerfile: deploy/Dockerfile.backend
       args:
         NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}
+    volumes:
+      - ${VAH_UPLOADS_BIND:-vah_uploads}:/app/backend/uploads
     restart: unless-stopped
     environment:
       VAH_SERVICE: gallery
@@ -70,6 +75,8 @@ services:
       dockerfile: deploy/Dockerfile.backend
       args:
         NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}
+    volumes:
+      - ${VAH_UPLOADS_BIND:-vah_uploads}:/app/backend/uploads
     restart: unless-stopped
     environment:
       VAH_SERVICE: market
@@ -141,3 +148,4 @@ services:
 
 volumes:
   vah_mysql_data:
+  vah_uploads:

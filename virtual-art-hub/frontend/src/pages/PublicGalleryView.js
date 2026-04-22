@@ -86,16 +86,15 @@ const PublicGalleryView = () => {
       setArtTotal(Number(data?.total) || list.length);
     };
 
-    /** 与 AuthContext 中 axios.defaults.baseURL（…/api）拼接，避免 apiUrl 绝对地址与代理不一致 */
     const loadFallback = async () => {
-      const gRes = await axios.get(`/galleries/direct/${encodeURIComponent(trimmed)}`, {
+      const gRes = await axios.get(apiUrl(`/galleries/direct/${encodeURIComponent(trimmed)}`), {
         params: { includeArtPieces: 0 },
         signal,
       });
       const g = gRes.data;
       if (!g?.id) return false;
       setGallery(g);
-      const aRes = await axios.get(`/galleries/${g.id}/artpieces`, {
+      const aRes = await axios.get(apiUrl(`/galleries/${g.id}/artpieces`), {
         params: { page: artPage, pageSize: artPageSize },
         signal,
       });
@@ -110,13 +109,13 @@ const PublicGalleryView = () => {
       try {
         let combined;
         try {
-          combined = await axios.get('/public/gallery-by-code', {
+          combined = await axios.get(apiUrl('/public/gallery-by-code'), {
             params: { code: trimmed, page: artPage, pageSize: artPageSize },
             signal,
           });
         } catch (firstErr) {
           if (isRequestCanceled(firstErr)) return;
-          combined = await axios.get(`/galleries/direct/${encodeURIComponent(trimmed)}/artpieces`, {
+          combined = await axios.get(apiUrl(`/galleries/direct/${encodeURIComponent(trimmed)}/artpieces`), {
             params: { page: artPage, pageSize: artPageSize },
             signal,
           });

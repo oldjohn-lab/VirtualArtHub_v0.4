@@ -144,6 +144,18 @@ function isImagePath(p) {
   return ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff'].includes(ext);
 }
 
+function imageMimeFromFilePath(absPath) {
+  const ext = path.extname(String(absPath || '')).toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.gif') return 'image/gif';
+  if (ext === '.svg') return 'image/svg+xml';
+  if (ext === '.bmp') return 'image/bmp';
+  if (ext === '.tif' || ext === '.tiff') return 'image/tiff';
+  if (ext === '.avif') return 'image/avif';
+  return 'image/jpeg';
+}
+
 function sanitizeRichText(html) {
   if (!html) return '';
   let out = String(html);
@@ -824,7 +836,7 @@ router.get('/users/:id/avatar', async (ctx) => {
     const abs = safeResolveBackendPath(user.avatarUploadPath, ['uploads/avatars']);
     if (abs && fs.existsSync(abs)) {
       ctx.set('Cache-Control', 'public, max-age=3600');
-      ctx.type = path.extname(abs) || 'image/png';
+      ctx.type = imageMimeFromFilePath(abs);
       ctx.body = fs.createReadStream(abs);
       return;
     }
@@ -838,7 +850,13 @@ router.get('/users/:id/avatar', async (ctx) => {
 });
 }
 
-if (shouldMount('gallery')) {
+function shouldMountPublicArtImages() {
+  if (shouldMount('gallery')) return true;
+  if (shouldMount('market')) return true;
+  return false;
+}
+
+if (shouldMountPublicArtImages()) {
 router.get('/galleries/:id/cover-image', async (ctx) => {
   const id = Number(ctx.params.id);
   if (!Number.isFinite(id)) {
@@ -865,10 +883,98 @@ router.get('/galleries/:id/cover-image', async (ctx) => {
     return;
   }
   ctx.set('Cache-Control', 'public, max-age=3600');
-  ctx.type = path.extname(abs) || 'image/jpeg';
+  ctx.type = imageMimeFromFilePath(abs);
   ctx.body = fs.createReadStream(abs);
 });
 
+router.get('/artpieces/download/:id', async (ctx) => {
+  const artPiece = await ArtPiece.findByPk(ctx.params.id);
+  if (!artPiece) {
+    ctx.status = 404;
+    ctx.body = { msg: 'Art piece not found' };
+    return;
+  }
+  if (!artPiece.filePath) {
+    ctx.status = 404;
+    ctx.body = { msg: 'File not found' };
+    return;
+  }
+  if (!artPiece.allowDownload) {
+    ctx.status = 403;
+    ctx.body = { msg: 'Download is not allowed for this art piece' };
+    return;
+  }
+  const fileAbs = safeResolveBackendPath(artPiece.filePath, ['uploads']);
+  if (!fileAbs || !fs.existsSync(fileAbs)) {
+    ctx.status = 404;
+    ctx.body = { msg: 'File not found' };
+    return;
+  }
+  ctx.attachment(path.basename(fileAbs));
+  ctx.body = fs.createReadStream(fileAbs);
+});
+
+router.get('/artpieces/preview/:id', async (ctx) => {
+  const artPiece = await ArtPiece.findByPk(ctx.params.id, { include: [{ model: User, as: 'user', attributes: ['username'] }] });
+  if (!artPiece) {
+    ctx.status = 404;
+    ctx.body = { msg: 'Art piece not found' };
+    return;
+  }
+
+  if (artPiece.artType === 'literature' || artPiece.artType === 'video' || !artPiece.filePath || !isImagePath(artPiece.filePath)) {
+    ctx.set('Cache-Control', 'no-store');
+    ctx.type = 'image/jpeg';
+    const subtitle = artPiece.artType === 'video' ? 'VIDEO' : artPiece.artType === 'literature' ? 'LITERATURE' : 'ART';
+    ctx.body = await placeholderJpeg({ title: artPiece.title, subtitle });
+    return;
+  }
+
+  const watermarkEnabled = !(ctx.query.wm === '0' || ctx.query.watermark === '0');
+  const fullPath = safeResolveBackendPath(artPiece.filePath, ['uploads']);
+  if (!fullPath || !fs.existsSync(fullPath)) {
+    ctx.status = 404;
+    ctx.body = { msg: 'File not found' };
+    return;
+  }
+
+  ctx.set('Cache-Control', 'no-store');
+  ctx.type = 'image/jpeg';
+
+  try {
+    const originalMetadata = await sharp(fullPath).metadata();
+    const ow = Number(originalMetadata.width) || 1280;
+    const oh = Number(originalMetadata.height) || ow;
+    const targetWidth = Math.min(ow, 1280);
+    const targetHeight = Math.round(oh * (targetWidth / ow));
+    const base = sharp(fullPath).resize({ width: targetWidth, withoutEnlargement: true });
+
+    if (!watermarkEnabled) {
+      ctx.body = await base.jpeg({ quality: 75 }).toBuffer();
+      return;
+    }
+
+    const svg = Buffer.from(
+      `<svg width="${targetWidth}" height="${targetHeight}">
+      <text x="50%" y="50%" font-family="Arial" font-size="${Math.floor(Math.min(targetWidth, targetHeight) / 8)}" fill="rgba(255,255,255,0.25)"
+        text-anchor="middle" dominant-baseline="middle" transform="rotate(-30, ${targetWidth / 2}, ${targetHeight / 2})">
+        VIRTUAL ART HUB
+      </text>
+    </svg>`
+    );
+
+    ctx.body = await base
+      .composite([{ input: svg, gravity: 'center' }])
+      .jpeg({ quality: 75 })
+      .toBuffer();
+  } catch (err) {
+    console.error('[artpieces/preview] sharp error', ctx.params.id, err && err.message ? err.message : err);
+    ctx.body = await placeholderJpeg({ title: artPiece.title, subtitle: 'PREVIEW' });
+  }
+});
+}
+
+if (shouldMount('gallery')) {
 router.get('/galleries/:id/chat-messages', auth, async (ctx) => {
   const galleryId = Number(ctx.params.id);
   if (!Number.isFinite(galleryId)) {
@@ -1590,87 +1696,6 @@ router.delete('/artpieces/:id', auth, async (ctx) => {
   }
   await artPiece.destroy();
   ctx.body = { msg: 'Art piece removed' };
-});
-
-router.get('/artpieces/download/:id', async (ctx) => {
-  const artPiece = await ArtPiece.findByPk(ctx.params.id);
-  if (!artPiece) {
-    ctx.status = 404;
-    ctx.body = { msg: 'Art piece not found' };
-    return;
-  }
-  if (!artPiece.filePath) {
-    ctx.status = 404;
-    ctx.body = { msg: 'File not found' };
-    return;
-  }
-  if (!artPiece.allowDownload) {
-    ctx.status = 403;
-    ctx.body = { msg: 'Download is not allowed for this art piece' };
-    return;
-  }
-  const fileAbs = safeResolveBackendPath(artPiece.filePath, ['uploads']);
-  if (!fileAbs || !fs.existsSync(fileAbs)) {
-    ctx.status = 404;
-    ctx.body = { msg: 'File not found' };
-    return;
-  }
-  ctx.attachment(path.basename(fileAbs));
-  ctx.body = fs.createReadStream(fileAbs);
-});
-
-router.get('/artpieces/preview/:id', async (ctx) => {
-  const artPiece = await ArtPiece.findByPk(ctx.params.id, { include: [{ model: User, as: 'user', attributes: ['username'] }] });
-  if (!artPiece) {
-    ctx.status = 404;
-    ctx.body = { msg: 'Art piece not found' };
-    return;
-  }
-
-  if (artPiece.artType === 'literature' || artPiece.artType === 'video' || !artPiece.filePath || !isImagePath(artPiece.filePath)) {
-    ctx.set('Cache-Control', 'no-store');
-    ctx.type = 'image/jpeg';
-    const subtitle = artPiece.artType === 'video' ? 'VIDEO' : artPiece.artType === 'literature' ? 'LITERATURE' : 'ART';
-    ctx.body = await placeholderJpeg({ title: artPiece.title, subtitle });
-    return;
-  }
-
-  const watermarkEnabled = !(ctx.query.wm === '0' || ctx.query.watermark === '0');
-  const fullPath = safeResolveBackendPath(artPiece.filePath, ['uploads']);
-  if (!fullPath || !fs.existsSync(fullPath)) {
-    ctx.status = 404;
-    ctx.body = { msg: 'File not found' };
-    return;
-  }
-
-  ctx.set('Cache-Control', 'no-store');
-  ctx.type = 'image/jpeg';
-
-  const originalMetadata = await sharp(fullPath).metadata();
-  const ow = Number(originalMetadata.width) || 1280;
-  const oh = Number(originalMetadata.height) || ow;
-  const targetWidth = Math.min(ow, 1280);
-  const targetHeight = Math.round(oh * (targetWidth / ow));
-  const base = sharp(fullPath).resize({ width: targetWidth, withoutEnlargement: true });
-
-  if (!watermarkEnabled) {
-    ctx.body = await base.jpeg({ quality: 75 }).toBuffer();
-    return;
-  }
-
-  const svg = Buffer.from(
-    `<svg width="${targetWidth}" height="${targetHeight}">
-      <text x="50%" y="50%" font-family="Arial" font-size="${Math.floor(Math.min(targetWidth, targetHeight) / 8)}" fill="rgba(255,255,255,0.25)"
-        text-anchor="middle" dominant-baseline="middle" transform="rotate(-30, ${targetWidth / 2}, ${targetHeight / 2})">
-        VIRTUAL ART HUB
-      </text>
-    </svg>`
-  );
-
-  ctx.body = await base
-    .composite([{ input: svg, gravity: 'center' }])
-    .jpeg({ quality: 75 })
-    .toBuffer();
 });
 
 router.get('/interactions/comments/:artPieceId', async (ctx) => {

@@ -34,6 +34,7 @@ function normalizeApiBaseUrl(raw) {
   return `${s}/api`;
 }
 
+/** 生产环境默认：当前页面 origin + /api（适合 HTTP/HTTPS 同源访问，如 http://ECS公网IP/） */
 export const API_BASE_URL = process.env.REACT_APP_API_BASE_URL
   ? normalizeApiBaseUrl(process.env.REACT_APP_API_BASE_URL)
   : devApiProxyMode()

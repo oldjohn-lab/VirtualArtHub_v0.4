@@ -11,6 +11,13 @@ import 'swiper/css';
 import 'swiper/css/effect-coverflow';
 import '../styles/swiper-custom.css';
 
+/** 公开接口用 fetch，不附带 axios 全局的 x-auth-token，避免过期 token 导致列表 401 */
+async function fetchPublicJson(url) {
+  const res = await fetch(url, { credentials: 'same-origin' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
 const { Title, Paragraph } = Typography;
 
 const Home = () => {
@@ -51,8 +58,8 @@ const Home = () => {
   useEffect(() => {
     const fetchGalleries = async () => {
       try {
-        const res = await axios.get(apiUrl('/galleries'));
-        const list = Array.isArray(res.data) ? res.data : Array.isArray(res.data?.items) ? res.data.items : [];
+        const data = await fetchPublicJson(apiUrl('/galleries'));
+        const list = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
         setGalleries(list);
         const count = list.length;
         const start = count > 1 ? count * 2 : 0;
@@ -65,6 +72,25 @@ const Home = () => {
     };
     fetchGalleries();
   }, []);
+
+  useEffect(() => {
+    if (!Array.isArray(galleries) || galleries.length === 0) return;
+    galleries.forEach((g) => {
+      const gid = Number(g.id);
+      if (!Number.isFinite(gid)) return;
+      if (!(Number(g.artPiecesCount) > 1)) return;
+      if (fetchedGalleryIdsRef.current.has(gid)) return;
+      const url = `${apiUrl(`/galleries/${gid}/artpieces`)}?page=1&pageSize=100`;
+      fetchPublicJson(url)
+        .then((data) => {
+          const arts = Array.isArray(data?.items) ? data.items : [];
+          if (arts.length === 0) return;
+          fetchedGalleryIdsRef.current.add(gid);
+          setGalleryArtMap((prev) => ({ ...prev, [gid]: arts }));
+        })
+        .catch(() => {});
+    });
+  }, [galleries]);
 
   useEffect(() => {
     if (galleries.length <= 1) return undefined;
@@ -97,30 +123,38 @@ const Home = () => {
     const active = galleries[settledSlideIndex % baseCount];
     if (!active) return;
 
-    const galleryId = active.id;
+    const galleryId = Number(active.id);
     const needsFetch =
-      galleryId &&
+      Number.isFinite(galleryId) &&
       !fetchedGalleryIdsRef.current.has(galleryId) &&
       (!Array.isArray(active.artPieces) || active.artPieces.length < 2) &&
       Number(active.artPiecesCount) > 1;
 
     if (needsFetch) {
-      fetchedGalleryIdsRef.current.add(galleryId);
       axios
         .get(apiUrl(`/galleries/${galleryId}`))
         .then((res) => {
-          const arts = Array.isArray(res.data?.artPieces) ? res.data.artPieces : [];
-          if (arts.length === 0) return;
+          let arts = Array.isArray(res.data?.artPieces) ? res.data.artPieces : [];
+          if (arts.length === 0 && Number(active.artPiecesCount) > 0) {
+            return axios
+              .get(apiUrl(`/galleries/${galleryId}/artpieces`), { params: { page: 1, pageSize: 100 } })
+              .then((r2) => (Array.isArray(r2.data?.items) ? r2.data.items : []));
+          }
+          return arts;
+        })
+        .then((arts) => {
+          if (!Array.isArray(arts) || arts.length === 0) return;
+          fetchedGalleryIdsRef.current.add(galleryId);
           setGalleryArtMap((prev) => ({ ...prev, [galleryId]: arts }));
         })
-        .catch(() => {
-          // ignore
-        });
+        .catch(() => {});
     }
 
     const candidates = [];
     if (active.coverArtId) candidates.push(active.coverArtId);
-    const resolvedArts = Array.isArray(active.artPieces) ? active.artPieces : galleryArtMap[galleryId];
+    const resolvedArts = Array.isArray(active.artPieces)
+      ? active.artPieces
+      : galleryArtMap[galleryId] || galleryArtMap[active.id];
     if (Array.isArray(resolvedArts)) {
       resolvedArts.forEach((a) => {
         if (a?.id) candidates.push(a.id);
@@ -144,7 +178,9 @@ const Home = () => {
     if (baseCount <= 0) return undefined;
     const active = galleries[settledSlideIndex % baseCount];
     if (!active) return undefined;
-    const resolvedArts = Array.isArray(active.artPieces) ? active.artPieces : galleryArtMap[active.id];
+    const resolvedArts = Array.isArray(active.artPieces)
+      ? active.artPieces
+      : galleryArtMap[Number(active.id)] || galleryArtMap[active.id];
     if (!Array.isArray(resolvedArts) || resolvedArts.length <= 1) {
       setRotatingArtIndex(0);
       return undefined;
@@ -256,7 +292,9 @@ const Home = () => {
                 const isActive = slideIndex === settledSlideIndex;
                 const averageRatingRaw = Number(gallery.averageRating);
                 const averageRating = Number.isFinite(averageRatingRaw) ? Math.max(0, Math.min(5, averageRatingRaw)) : 0;
-                const resolvedArts = Array.isArray(gallery.artPieces) ? gallery.artPieces : galleryArtMap[gallery.id];
+                const resolvedArts = Array.isArray(gallery.artPieces)
+                  ? gallery.artPieces
+                  : galleryArtMap[Number(gallery.id)] || galleryArtMap[gallery.id];
                 const coverArtId = gallery.coverArtId || (Array.isArray(resolvedArts) && resolvedArts[0]?.id ? resolvedArts[0].id : null);
                 const hasArt = Boolean(coverArtId);
                 const showRotator = carouselVisible && isActive && Array.isArray(resolvedArts) && resolvedArts.length > 1;
