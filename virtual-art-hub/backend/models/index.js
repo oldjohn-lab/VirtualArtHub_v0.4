@@ -2,8 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const Sequelize = require('sequelize');
 
+// 勿 override：容器/生产环境已注入 DB_HOST 等时，不能被镜像内打包的 .env 覆盖成 127.0.0.1
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
-require('dotenv').config({ path: path.join(__dirname, '..', '..', 'backend-koa', '.env'), override: true });
+require('dotenv').config({ path: path.join(__dirname, '..', '..', 'backend-koa', '.env') });
 
 const basename = path.basename(__filename);
 const db = {};
