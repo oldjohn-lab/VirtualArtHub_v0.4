@@ -1,8 +1,10 @@
+/**
+ * 生产环境（Docker 内 Nginx 反代）：API 走同源 `/api`，勿写死 :5002，否则浏览器会请求未映射端口导致登录/列表失败。
+ * 前后端分离时请在构建时设置 REACT_APP_API_ORIGIN 或 REACT_APP_API_BASE_URL。
+ */
 export const API_ORIGIN =
   process.env.REACT_APP_API_ORIGIN ||
-  (typeof window !== 'undefined'
-    ? `${window.location.protocol}//${window.location.hostname}:5002`
-    : 'http://localhost:5002');
+  (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5002');
 
 /**
  * 本地 `npm start` 且未配置 REACT_APP_API_* 时，通过当前页面的同源路径 `/api/...` 访问后端，
